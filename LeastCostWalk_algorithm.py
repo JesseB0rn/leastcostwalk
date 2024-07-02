@@ -52,6 +52,7 @@ from qgis.core import (QgsProcessing,
                        QgsMapLayerType)
 import queue
 from math import sqrt
+
 SQRT2 = sqrt(2)
 
 class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
@@ -78,7 +79,7 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
         Here we define the inputs and output of the algorithm, along
         with some other properties.
         """
-        # Raster layers
+        # Raster layers
 
         self.addParameter(
             QgsProcessingParameterRasterLayer(
@@ -108,7 +109,7 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
             )
         )
 
-        # Coefffs
+        # Coefficients
 
         self.addParameter(
             QgsProcessingParameterNumber(
@@ -146,18 +147,18 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
             )
         )
 
-        # Output
+        # Output
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT,
                 self.tr('Output Walked Path')
             )
         )
-    
+
     def parseParams(self, parameters, context: QgsProcessingContext):
         self.cost_raster = self.parameterAsRasterLayer(parameters, self.INPUT_COST_RASTER, context)
         self.elev_raster = self.parameterAsRasterLayer(parameters, self.INPUT_ELEV_RASTER, context)
-        
+
         self.startpoitn = self.parameterAsPoint(parameters, self.INPUT_START_POINT, context)
         self.endpoint = self.parameterAsPoint(parameters, self.INPUT_END_POINT, context)
 
@@ -170,29 +171,28 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
         ]
         if self.cost_raster is None or self.elev_raster is None or self.startpoitn is None or self.endpoint is None:
             raise QgsProcessingException(self.tr("One or more required params missing / broken / malformed"))
-        
+
         if self.cost_raster.crs() != self.elev_raster.crs():
             raise QgsProcessingException(self.tr("cost and elevation layer crs mismatch"))
-        
+
         if self.cost_raster.rasterUnitsPerPixelX() != self.elev_raster.rasterUnitsPerPixelX() or self.cost_raster.rasterUnitsPerPixelY() != self.elev_raster.rasterUnitsPerPixelY():
             raise QgsProcessingException(self.tr("cost and elevation layer resolution mismatch"))
 
-
     def _pointToRC(self, point: QgsPointXY):
         return (int(point.x() / self.xres), int(point.y() / self.yres))
-    
+
     def _rcToPointXY(self, rowcol: tuple[int, int]):
         row, col = rowcol
         p = QgsPointXY()
         p.set(row * self.xres + self.cell_offset_x, col * self.yres + self.cell_offset_y)
         return p
-    
+
     def _rcToPoint(self, rowcol: tuple[int, int]):
         return QgsPoint((rowcol[0] + 0.5) * self.xres, (rowcol[1] + 0.5) * self.yres)
-    
+
     def _manhattan(self, a_rc: tuple[int, int], b_rc: tuple[int, int]):
         return abs(a_rc[0] - b_rc[0]) + abs(a_rc[1] - b_rc[1])
-    
+
     def _prepare_RC_bounds(self, extent: QgsRectangle):
         self.x_min = self.cost_raster.extent().xMinimum() / self.xres
         self.x_max = self.cost_raster.extent().xMaximum() / self.yres
@@ -203,14 +203,14 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
         x, y = xy
         return self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max
 
-    def _neigbors(self, rc) -> list[tuple[int, int]]:
+    def _neighbors(self, rc) -> list[tuple[int, int]]:
         x, y = rc
         results = [(x + 1, y),      (x, y - 1),     (x - 1, y), 
                    (x, y + 1),                      (x + 1, y - 1), 
                    (x + 1, y + 1),  (x - 1, y - 1), (x - 1, y + 1)]
         results = list(filter(self._neighbor_valid, results))
         return results
-    
+
     def cost(self, a_rc: tuple[int, int], b_rc: tuple[int, int]):
         """
         Computes edge cost between two raster cells (friction + elevation gain/loss)
@@ -221,6 +221,12 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
 
         #! Implement timecost
         return friction_cost * SQRT2 if a_rc[0] != b_rc[0] or a_rc[1] != b_rc[1] else 1.0
+
+    def heuristic(self, a_rc: tuple[int, int], b_rc: tuple[int, int]):
+        """
+        Heuristic function for A*: estimate of the cost from a to b
+        """
+        return self._manhattan(a_rc, b_rc)
 
     def processAlgorithm(self, parameters, context: QgsProcessingContext, feedback: QgsProcessingFeedback):
         """
@@ -247,7 +253,7 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
 
         if not (self._neighbor_valid(cell_start_xy) and self._neighbor_valid(cell_end_xy)):
             raise QgsProcessingException(self.tr("😬 Start or endpoint outside raster extent"))
-        # setup
+        # setup
 
         frnt = queue.PriorityQueue()
         came_from_cost = dict()
@@ -257,7 +263,7 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
         frnt.put((0, cell_start_xy))
 
 
-        # dijkstra
+        # A*
         result = None
 
         while frnt.qsize() > 0:
@@ -284,11 +290,12 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
                 result = (path, costs)
                 break
             
-            for ngb in self._neigbors(current_node):
-                cost = came_from_cost[current_node][1] + self.cost(current_node, ngb)
-                if ngb not in came_from_cost or cost < came_from_cost[ngb][1]:
-                    came_from_cost[ngb] = (current_node, cost)
-                    frnt.put((cost, ngb))
+            for ngb in self._neighbors(current_node):
+                new_cost = came_from_cost[current_node][1] + self.cost(current_node, ngb)
+                if ngb not in came_from_cost or new_cost < came_from_cost[ngb][1]:
+                    came_from_cost[ngb] = (current_node, new_cost)
+                    priority = new_cost + self.heuristic(ngb, cell_end_xy) * 0.025
+                    frnt.put((priority, ngb))
 
             if feedback.isCanceled():
                 raise KeyboardInterrupt("Algorithm was cancelled")
