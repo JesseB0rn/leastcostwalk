@@ -43,11 +43,15 @@ from qgis.core import (QgsProcessing,
                        QgsProcessingException,
                        QgsProcessingParameterNumber,
                        QgsProcessingFeedback,
+                       QgsProcessingParameterCrs,
                        QgsProcessingContext,
                        QgsRectangle,
+                       QgsProject,
                        QgsField,
                        QgsPointXY,
+                       QgsCoordinateReferenceSystem,
                        QgsPoint,
+                       QgsCoordinateTransform,
                        QgsFields,
                        QgsMapLayerType)
 import queue
@@ -72,6 +76,8 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
 
     INPUT_START_POINT = 'INPUT_START_POINT'
     INPUT_END_POINT = 'INPUT_END_POINT'
+
+    POINTS_CRS = 'POINTS_CRS'
 
     OUTPUT = 'OUTPUT'
 
@@ -108,6 +114,10 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
                 self.INPUT_END_POINT,
                 self.tr('End Point')
             )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterCrs(self.POINTS_CRS, self.tr('Input Points CRS'))
         )
 
         # Coefficients
@@ -192,6 +202,12 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
 
         if self.cost_raster.rasterUnitsPerPixelX() != self.elev_raster.rasterUnitsPerPixelX() or self.cost_raster.rasterUnitsPerPixelY() != self.elev_raster.rasterUnitsPerPixelY():
             raise QgsProcessingException(self.tr("cost and elevation layer resolution mismatch"))
+        
+        inputPointsCRS = self.parameterAsCrs(parameters, self.POINTS_CRS, context)
+        xform = QgsCoordinateTransform(inputPointsCRS, self.cost_raster.crs(), QgsProject.instance())
+
+        self.startpoitn = xform.transform(self.startpoitn)
+        self.endpoint = xform.transform(self.endpoint)
 
     def _pointToRC(self, point: QgsPointXY):
         return (int(point.x() / self.xres), int(point.y() / self.yres))
