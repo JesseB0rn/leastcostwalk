@@ -388,13 +388,13 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
 class LeastCostWalkHelper:
     @staticmethod
     def create_fields():
-        start_field = QgsField("start point id", QVariant.Int, "int")
-        end_field = QgsField("end point id", QVariant.Int, "int")
-        cost_field = QgsField("total cost", QVariant.Double, "double", 10, 3)
+        # start_field = QgsField("start point id", QVariant.Int, "int")
+        # end_field = QgsField("end point id", QVariant.Int, "int")
+        # cost_field = QgsField("total cost", QVariant.Double, "double", 10, 3)
         fields = QgsFields()
-        fields.append(start_field)
-        fields.append(end_field)
-        fields.append(cost_field)
+        # fields.append(start_field)
+        # fields.append(end_field)
+        # fields.append(cost_field)
         return fields
     @staticmethod
     def create_path_feature_from_points(path_points, fields):
