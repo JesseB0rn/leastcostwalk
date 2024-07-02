@@ -294,10 +294,7 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
                 raise KeyboardInterrupt("Algorithm was cancelled")
             # feedback.setProgress(self._manhattan(cell_end_xy, current_node) / self.max_manhattan * 100)
         # feedback.pushInfo(self.tr("%f" % provider.sample(self.startpoitn, 1)[0]))
-        points = []
-        for node, cost in zip(result[0], result[1]):
-            points.append(self._rcToPoint(node))
-        
+        points = [self._rcToPoint(node) for node, cost in zip(result[0], result[1])]
 
         sink_fields = LeastCostWalkHelper.create_fields()
         (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT, context, sink_fields, QgsWkbTypes.LineString, self.cost_raster.crs())
