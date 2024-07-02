@@ -64,6 +64,7 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
     FLOAT_STEEP_UPHILL_COST_COEFF = "FLOAT_STEEP_UPHILL_COEFF"
     FLOAT_DOWNHILL_COST_COEFF = "FLOAT_DOWNHILL_COEFF"
     FLOAT_STEEP_DOWNHILL_COST_COEFF = "FLOAT_STEEP_DOWNHILL_COEFF"
+    FLOAT_FLAT_COST_COEFF = "FLOAT_FLAT_COEFF"
     FLOAT_COST_COEFF = "FLOAT_COST_COEFF"
 
     INPUT_COST_RASTER = 'INPUT_COST_RASTER'
@@ -115,35 +116,48 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.FLOAT_COST_COEFF,
                 self.tr("Cost Matrix Scaling Coefficient"),
-                type=QgsProcessingParameterNumber.Double
+                type=QgsProcessingParameterNumber.Double,
+                defaultValue=0.04
             )
         )
         self.addParameter(
             QgsProcessingParameterNumber(
                 self.FLOAT_UPHILL_COST_COEFF,
                 self.tr("Uphill Cost Coeff"),
-                type=QgsProcessingParameterNumber.Double
+                type=QgsProcessingParameterNumber.Double,
+                defaultValue=0.0025
             )
         )
         self.addParameter(
             QgsProcessingParameterNumber(
                 self.FLOAT_STEEP_UPHILL_COST_COEFF,
                 self.tr("Steep Uphill Cost Coeff"),
-                type=QgsProcessingParameterNumber.Double
+                type=QgsProcessingParameterNumber.Double,
+                defaultValue=2.0
             )
         )
         self.addParameter(
             QgsProcessingParameterNumber(
                 self.FLOAT_DOWNHILL_COST_COEFF,
                 self.tr("Downhill Cost Coeff"),
-                type=QgsProcessingParameterNumber.Double
+                type=QgsProcessingParameterNumber.Double,
+                defaultValue=0.00125
             )
         )
         self.addParameter(
             QgsProcessingParameterNumber(
                 self.FLOAT_STEEP_DOWNHILL_COST_COEFF,
                 self.tr("Steep Downhill Cost Coeff"),
-                type=QgsProcessingParameterNumber.Double
+                type=QgsProcessingParameterNumber.Double,
+                defaultValue=2.0
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.FLOAT_FLAT_COST_COEFF,
+                self.tr("Flat Cost Coeff"),
+                type=QgsProcessingParameterNumber.Double,
+                defaultValue=0.00025
             )
         )
 
@@ -167,7 +181,8 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
             self.parameterAsDouble(parameters, self.FLOAT_DOWNHILL_COST_COEFF, context),
             self.parameterAsDouble(parameters, self.FLOAT_STEEP_DOWNHILL_COST_COEFF, context),
             self.parameterAsDouble(parameters, self.FLOAT_UPHILL_COST_COEFF, context),
-            self.parameterAsDouble(parameters, self.FLOAT_STEEP_UPHILL_COST_COEFF, context)
+            self.parameterAsDouble(parameters, self.FLOAT_STEEP_UPHILL_COST_COEFF, context),
+            self.parameterAsDouble(parameters, self.FLOAT_FLAT_COST_COEFF, context)
         ]
         if self.cost_raster is None or self.elev_raster is None or self.startpoitn is None or self.endpoint is None:
             raise QgsProcessingException(self.tr("One or more required params missing / broken / malformed"))
@@ -215,12 +230,16 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
         """
         Computes edge cost between two raster cells (friction + elevation gain/loss)
         """
+        h_dist = SQRT2 if a_rc[0] != b_rc[0] or a_rc[1] != b_rc[1] else 1.0
         a, b = self._rcToPointXY(a_rc), self._rcToPointXY(b_rc)
         friction_cost = (self.cost_provider.sample(a, 1)[0] + self.cost_provider.sample(b, 1)[0]) / 2
-        deltaElev = self.elev_provider.sample(a, 1)[0] - self.elev_provider.sample(b, 1)[0]
+        climb = min(self.elev_provider.sample(b, 1)[0] - self.elev_provider.sample(a, 1)[0], 0.0)
+        dive = max(self.elev_provider.sample(a, 1)[0] - self.elev_provider.sample(b, 1)[0], 0.0)
 
-        #! Implement timecost
-        return friction_cost * SQRT2 if a_rc[0] != b_rc[0] or a_rc[1] != b_rc[1] else 1.0
+        is_steep = climb / h_dist*self.xres >= 0.70 or dive / h_dist*self.xres >= 1.19
+        time_cost = climb * (self.coeffs[4] if is_steep else self.coeffs[3]) + dive * (self.coeffs[2] if is_steep else self.coeffs[1]) + h_dist * self.coeffs[5]
+
+        return friction_cost * self.coeffs[0] * h_dist + time_cost
 
     def heuristic(self, a_rc: tuple[int, int], b_rc: tuple[int, int]):
         """
@@ -294,7 +313,7 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
                 new_cost = came_from_cost[current_node][1] + self.cost(current_node, ngb)
                 if ngb not in came_from_cost or new_cost < came_from_cost[ngb][1]:
                     came_from_cost[ngb] = (current_node, new_cost)
-                    priority = new_cost + self.heuristic(ngb, cell_end_xy) * 0.025
+                    priority = new_cost + self.heuristic(ngb, cell_end_xy) / self.max_manhattan
                     frnt.put((priority, ngb))
 
             if feedback.isCanceled():
