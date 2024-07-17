@@ -248,9 +248,19 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
         """
         h_dist = SQRT2 if a_rc[0] != b_rc[0] or a_rc[1] != b_rc[1] else 1.0
         a, b = self._rcToPointXY(a_rc), self._rcToPointXY(b_rc)
-        friction_cost = (self.cost_provider.sample(a, 1)[0] + self.cost_provider.sample(b, 1)[0]) / 2
-        climb = min(self.elev_provider.sample(b, 1)[0] - self.elev_provider.sample(a, 1)[0], 0.0)
-        dive = max(self.elev_provider.sample(a, 1)[0] - self.elev_provider.sample(b, 1)[0], 0.0)
+
+        frictionSampleA = self.cost_provider.sample(a, 1)
+        frictionSampleB = self.cost_provider.sample(b, 1)
+
+        elevSampleA = self.elev_provider.sample(a, 1)
+        elevSampleB = self.elev_provider.sample(b, 1)
+
+        frictionA = frictionSampleA[0] if frictionSampleA[1] else float('inf')
+        frictionB = frictionSampleB[0] if frictionSampleB[1] else float('inf')
+
+        friction_cost = (frictionA[0] + frictionB[0]) / 2
+        climb = min(elevSampleB[0] - elevSampleA[0], 0.0)
+        dive = max(elevSampleA[0] - elevSampleB[0], 0.0)
 
         is_steep = climb / h_dist*self.xres >= 0.70 or dive / h_dist*self.xres >= 1.19
         time_cost = climb * (self.coeffs[4] if is_steep else self.coeffs[3]) + dive * (self.coeffs[2] if is_steep else self.coeffs[1]) + h_dist * self.coeffs[5]
