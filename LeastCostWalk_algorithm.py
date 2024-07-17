@@ -258,11 +258,14 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
         frictionA = frictionSampleA[0] if frictionSampleA[1] else float('inf')
         frictionB = frictionSampleB[0] if frictionSampleB[1] else float('inf')
 
-        friction_cost = (frictionA[0] + frictionB[0]) / 2
-        climb = min(elevSampleB[0] - elevSampleA[0], 0.0)
-        dive = max(elevSampleA[0] - elevSampleB[0], 0.0)
+        friction_cost = (frictionA + frictionB) / 2
 
-        is_steep = climb / h_dist*self.xres >= 0.70 or dive / h_dist*self.xres >= 1.19
+        deltaH = elevSampleB[0] - elevSampleA[0]
+
+        climb = deltaH if deltaH > 0 else 0.0
+        dive = -deltaH if deltaH < 0 else 0.0
+
+        is_steep = climb / (h_dist*self.xres) >= 0.70 or dive / (h_dist*self.xres) >= 1.19
         time_cost = climb * (self.coeffs[4] if is_steep else self.coeffs[3]) + dive * (self.coeffs[2] if is_steep else self.coeffs[1]) + h_dist * self.coeffs[5]
 
         return friction_cost * self.coeffs[0] * h_dist + time_cost
@@ -282,6 +285,8 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
         self.xres, self.yres = self.cost_raster.rasterUnitsPerPixelX(), self.cost_raster.rasterUnitsPerPixelY()
         self.cell_offset_x, self.cell_offset_y = self.xres / 2, self.yres / 2
         feedback.pushInfo(self.tr(f"Units per px x: {self.xres} y: {self.yres}"))
+
+        self.feedback = feedback
 
         self._prepare_RC_bounds(self.cost_raster.extent().intersect(self.elev_raster.extent()))
 
