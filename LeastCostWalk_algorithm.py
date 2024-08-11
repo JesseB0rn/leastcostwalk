@@ -344,7 +344,7 @@ class LeastCostWalkAlgorithm(QgsProcessingAlgorithm):
                 new_cost = came_from_cost[current_node][1] + self.cost(current_node, ngb)
                 if ngb not in came_from_cost or new_cost < came_from_cost[ngb][1]:
                     came_from_cost[ngb] = (current_node, new_cost)
-                    priority = new_cost + self.heuristic(ngb, cell_end_xy) / self.max_manhattan
+                    priority = new_cost + (self.heuristic(ngb, cell_end_xy) / (self.max_manhattan))
                     frnt.put((priority, ngb))
 
             if feedback.isCanceled():
